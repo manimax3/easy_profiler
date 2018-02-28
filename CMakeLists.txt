@@ -3,7 +3,9 @@ project(easy_profiler CXX)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-option(EASY_PROFILER_NO_GUI "Build easy_profiler without the GUI application (required Qt)" OFF)
+option(EASY_PROFILER_NO_GUI "Build easy_profiler without the GUI application (required Qt)" ON)
+set(EASY_PROFILER_NO_CONVERTER ON)
+set(EASY_PROFILER_NO_SAMPLES ON)
 
 set(EASY_PROGRAM_VERSION_MAJOR 1)
 set(EASY_PROGRAM_VERSION_MINOR 3)
@@ -31,7 +33,10 @@ add_subdirectory(easy_profiler_core)
 if (NOT EASY_PROFILER_NO_GUI)
     add_subdirectory(profiler_gui)
 endif()
-add_subdirectory(easy_profiler_converter)
+
+if (NOT EASY_PROFILER_NO_CONVERTER)
+    add_subdirectory(easy_profiler_converter)
+endif()
 
 if (NOT EASY_PROFILER_NO_SAMPLES)
     add_subdirectory(sample)
