@@ -13,7 +13,7 @@
 *                   : *
 * ----------------- :
 * license           : Lightweight profiler library for c++
-*                   : Copyright(C) 2016-2017  Sergey Yagovtsev, Victor Zarubkin
+*                   : Copyright(C) 2016-2018  Sergey Yagovtsev, Victor Zarubkin
 *                   :
 *                   : Licensed under either of
 *                   :     * MIT license (LICENSE.MIT or http://opensource.org/licenses/MIT)
@@ -71,58 +71,54 @@
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-namespace profiler {
-
-    class EasyEventTracer EASY_FINAL
-    {
-#ifndef EASY_MAGIC_STATIC_CPP11
-        friend class EasyEventTracerInstance;
+class EasyEventTracer EASY_FINAL
+{
+#ifndef EASY_MAGIC_STATIC_AVAILABLE
+    friend class EasyEventTracerInstance;
 #endif
 
 #pragma pack(push, 1)
-        struct Properties {
-            Properties();
+    struct Properties {
+        Properties();
 
-            EVENT_TRACE_PROPERTIES base;
-            char sessionName[sizeof(KERNEL_LOGGER_NAME)];
-        };
+        EVENT_TRACE_PROPERTIES base;
+        char sessionName[sizeof(KERNEL_LOGGER_NAME)];
+    };
 #pragma pack(pop)
 
-        ::std::thread       m_processThread;
-        Properties             m_properties;
-        EVENT_TRACE_LOGFILE         m_trace;
-        ::profiler::spin_lock        m_spin;
-        ::std::atomic_bool    m_lowPriority;
-        TRACEHANDLE         m_sessionHandle = INVALID_PROCESSTRACE_HANDLE;
-        TRACEHANDLE          m_openedHandle = INVALID_PROCESSTRACE_HANDLE;
-        bool                     m_bEnabled = false;
+    std::thread       m_processThread;
+    Properties             m_properties;
+    EVENT_TRACE_LOGFILE         m_trace;
+    profiler::spin_lock        m_spin;
+    std::atomic_bool    m_lowPriority;
+    TRACEHANDLE         m_sessionHandle = INVALID_PROCESSTRACE_HANDLE;
+    TRACEHANDLE          m_openedHandle = INVALID_PROCESSTRACE_HANDLE;
+    bool                     m_bEnabled = false;
 
-    public:
+public:
 
-        static EasyEventTracer& instance();
-        ~EasyEventTracer();
+    static EasyEventTracer& instance();
+    ~EasyEventTracer();
 
-        bool isLowPriority() const;
+    bool isLowPriority() const;
 
-        ::profiler::EventTracingEnableStatus enable(bool _force = false);
-        void disable();
-        void setLowPriority(bool _value);
-        static void setProcessPrivileges();
+    EventTracingEnableStatus enable(bool _force = false);
+    void disable();
+    void setLowPriority(bool _value);
+    static void setProcessPrivileges();
 
-    private:
+private:
 
-        EasyEventTracer();
+    EasyEventTracer();
 
-        inline EVENT_TRACE_PROPERTIES* props()
-        {
-            return reinterpret_cast<EVENT_TRACE_PROPERTIES*>(&m_properties);
-        }
+    inline EVENT_TRACE_PROPERTIES* props()
+    {
+        return reinterpret_cast<EVENT_TRACE_PROPERTIES*>(&m_properties);
+    }
 
-        ::profiler::EventTracingEnableStatus startTrace(bool _force, int _step = 0);
+    EventTracingEnableStatus startTrace(bool _force, int _step = 0);
 
-    }; // END of class EasyEventTracer.
-
-} // END of namespace profiler.
+}; // END of class EasyEventTracer.
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////

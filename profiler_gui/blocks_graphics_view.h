@@ -15,12 +15,12 @@
 *                   :
 *                   : * 2016/06/30 Victor Zarubkin: Replaced doubles with floats (in ProfBlockItem) for less memory consumption.
 *                   :
-*                   : * 2016/09/15 Victor Zarubkin: Moved sources of EasyGraphicsItem and EasyChronometerItem to separate files.
+*                   : * 2016/09/15 Victor Zarubkin: Moved sources of GraphicsBlockItem and GraphicsRulerItem to separate files.
 *                   :
 *                   : *
 * ----------------- :
 * license           : Lightweight profiler library for c++
-*                   : Copyright(C) 2016-2017  Sergey Yagovtsev, Victor Zarubkin
+*                   : Copyright(C) 2016-2018  Sergey Yagovtsev, Victor Zarubkin
 *                   :
 *                   : Licensed under either of
 *                   :     * MIT license (LICENSE.MIT or http://opensource.org/licenses/MIT)
@@ -68,6 +68,7 @@
 
 #include <QGraphicsView>
 #include <QGraphicsItem>
+#include <QPainterPath>
 #include <QPoint>
 #include <QRectF>
 #include <QTimer>
@@ -75,60 +76,123 @@
 
 #include <easy/reader.h>
 
-#include "common_types.h"
+#include "common_functions.h"
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
 class QGraphicsProxyWidget;
-class EasyGraphicsView;
-class EasyGraphicsItem;
-class EasyGraphicsScrollbar;
-class EasyChronometerItem;
+class BlocksGraphicsView;
+class GraphicsBlockItem;
+class GraphicsScrollbar;
+class GraphicsRulerItem;
 
 //////////////////////////////////////////////////////////////////////////
 
-#define EASY_QGRAPHICSITEM(ClassName) \
-class ClassName : public QGraphicsItem { \
-    QRectF m_boundingRect; \
-public: \
-    ClassName() : QGraphicsItem() {} \
-    virtual ~ClassName() {} \
-    void paint(QPainter* _painter, const QStyleOptionGraphicsItem* _option, QWidget* _widget = nullptr) override; \
-    QRectF boundingRect() const override { return m_boundingRect; } \
-    void setBoundingRect(qreal x, qreal y, qreal w, qreal h) { m_boundingRect.setRect(x, y, w, h); } \
-    void setBoundingRect(const QRectF& _rect) { m_boundingRect = _rect; } \
-}
+class AuxItem : public QObject, public QGraphicsItem
+{
+    Q_OBJECT;
+    Q_INTERFACES(QGraphicsItem);
 
-EASY_QGRAPHICSITEM(EasyBackgroundItem);
-EASY_QGRAPHICSITEM(EasyTimelineIndicatorItem);
-EASY_QGRAPHICSITEM(EasyThreadNameItem);
+protected:
 
-#undef EASY_QGRAPHICSITEM
+    QRectF m_boundingRect;
 
-//////////////////////////////////////////////////////////////////////////
+public:
 
-struct EasyBoldLabel : public QLabel {
-    EasyBoldLabel(const QString& _text, QWidget* _parent = nullptr);
-    virtual ~EasyBoldLabel();
+    explicit AuxItem() : QObject(nullptr), QGraphicsItem() {}
+    ~AuxItem() override {}
+
+    QRectF boundingRect() const override { return m_boundingRect; }
+    void setBoundingRect(qreal x, qreal y, qreal w, qreal h) { m_boundingRect.setRect(x, y, w, h); }
+    void setBoundingRect(const QRectF& _rect) { m_boundingRect = _rect; }
+};
+
+class ThreadNameItem : public AuxItem
+{
+public:
+    explicit ThreadNameItem() : AuxItem() {}
+    ~ThreadNameItem() override {}
+    void paint(QPainter* _painter, const QStyleOptionGraphicsItem* _option, QWidget* _widget = nullptr) override;
+};
+
+class BackgroundItem : public AuxItem
+{
+    Q_OBJECT;
+
+    QTimer          m_idleTimer;
+    QPainterPath m_bookmarkSign;
+    QLabel*           m_tooltip;
+    size_t           m_bookmark;
+    bool       m_bButtonPressed;
+
+public:
+
+    explicit BackgroundItem();
+    ~BackgroundItem() override;
+
+    void paint(QPainter* _painter, const QStyleOptionGraphicsItem* _option, QWidget* _widget = nullptr) override;
+
+    bool mouseMove(const QPointF& scenePos);
+    bool mousePress(const QPointF& scenePos);
+    bool mouseRelease(const QPointF& scenePos);
+    bool mouseDoubleClick(const QPointF& scenePos);
+    void mouseLeave();
+
+    bool contains(const QPointF& scenePos) const;
+
+signals:
+
+    void bookmarkChanged(size_t index);
+    void moved();
+
+private slots:
+
+    void onIdleTimeout();
+};
+
+class ForegroundItem : public AuxItem
+{
+    Q_OBJECT;
+
+    size_t m_bookmark;
+
+public:
+
+    explicit ForegroundItem();
+    ~ForegroundItem() override {}
+
+    void paint(QPainter* _painter, const QStyleOptionGraphicsItem* _option, QWidget* _widget = nullptr) override;
+
+public slots:
+
+    void onBookmarkChanged(size_t index);
+    void onMoved();
 };
 
 //////////////////////////////////////////////////////////////////////////
 
-class EasyGraphicsView : public QGraphicsView
+struct BoldLabel : public QLabel {
+    BoldLabel(const QString& _text, QWidget* _parent = nullptr);
+    ~BoldLabel() override;
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+class BlocksGraphicsView : public QGraphicsView
 {
     Q_OBJECT
 
 private:
 
-    typedef QGraphicsView Parent;
-    typedef EasyGraphicsView This;
-    typedef ::std::vector<EasyGraphicsItem*> Items;
-    //typedef ::std::unordered_set<int, ::profiler::passthrough_hash<int> > Keys;
+    using Parent = QGraphicsView;
+    using This = BlocksGraphicsView;
+    using Items = ::std::vector<GraphicsBlockItem*>;
+    //using Keys = ::std::unordered_set<int, ::estd::hash<int> >;
 
-    Items                               m_items; ///< Array of all EasyGraphicsItem items
+    Items                               m_items; ///< Array of all GraphicsBlockItem items
     //Keys                                 m_keys; ///< Pressed keyboard keys
-    ::profiler_gui::TreeBlocks m_selectedBlocks; ///< Array of items which were selected by selection zone (EasyChronometerItem)
+    ::profiler_gui::TreeBlocks m_selectedBlocks; ///< Array of items which were selected by selection zone (GraphicsRulerItem)
     QTimer                       m_flickerTimer; ///< Timer for flicking behavior
     QTimer                          m_idleTimer; ///< 
     QRectF                   m_visibleSceneRect; ///< Visible scene rectangle
@@ -136,15 +200,17 @@ private:
     qreal                          m_sceneWidth; ///< 
     qreal                               m_scale; ///< Current scale
     qreal                              m_offset; ///< Have to use manual offset for all scene content instead of using scrollbars because QScrollBar::value is 32-bit integer :(
+    qreal                  m_visibleRegionWidth; ///< Visible scene rectangle in scene coordinates + width of vertical scrollbar (if visible)
     qreal                        m_timelineStep; ///< 
     uint64_t                         m_idleTime; ///< 
     QPoint                      m_mousePressPos; ///< Last mouse global position (used by mousePressEvent and mouseMoveEvent)
     QPoint                      m_mouseMovePath; ///< Mouse move path between press and release of any button
     Qt::MouseButtons             m_mouseButtons; ///< Pressed mouse buttons
-    EasyGraphicsScrollbar*         m_pScrollbar; ///< Pointer to the graphics scrollbar widget
-    EasyChronometerItem*      m_chronometerItem; ///< Pointer to the EasyChronometerItem which is displayed when you press right mouse button and move mouse left or right. This item is used to select blocks to display in tree widget.
-    EasyChronometerItem*   m_chronometerItemAux; ///< Pointer to the EasyChronometerItem which is displayed when you double click left mouse button and move mouse left or right. This item is used only to measure time.
-    QGraphicsProxyWidget*         m_popupWidget; ///< 
+    GraphicsScrollbar*             m_pScrollbar; ///< Pointer to the graphics scrollbar widget
+    GraphicsRulerItem*          m_selectionItem; ///< Pointer to the GraphicsRulerItem which is displayed when you press right mouse button and move mouse left or right. This item is used to select blocks to display in tree widget.
+    GraphicsRulerItem*              m_rulerItem; ///< Pointer to the GraphicsRulerItem which is displayed when you double click left mouse button and move mouse left or right. This item is used only to measure time.
+    BackgroundItem*            m_backgroundItem; ///<
+    QWidget*                      m_popupWidget; ///<
     int                         m_flickerSpeedX; ///< Current flicking speed x
     int                         m_flickerSpeedY; ///< Current flicking speed y
     int                       m_flickerCounterX;
@@ -152,21 +218,24 @@ private:
     bool                         m_bDoubleClick; ///< Is mouse buttons double clicked
     bool                        m_bUpdatingRect; ///< Stub flag which is used to avoid excess calculations on some scene update (flicking, scaling and so on)
     bool                               m_bEmpty; ///< Indicates whether scene is empty and has no items
+    bool              m_isArbitraryValueTooltip;
+    bool                             m_bHovered;
 
 public:
 
-    explicit EasyGraphicsView(QWidget* _parent = nullptr);
-    virtual ~EasyGraphicsView();
+    explicit BlocksGraphicsView(QWidget* _parent = nullptr);
+    ~BlocksGraphicsView() override;
 
     // Public virtual methods
 
+    void enterEvent(QEvent* _event) override;
+    void leaveEvent(QEvent* _event) override;
     void wheelEvent(QWheelEvent* _event) override;
     void mousePressEvent(QMouseEvent* _event) override;
     void mouseDoubleClickEvent(QMouseEvent* _event) override;
     void mouseReleaseEvent(QMouseEvent* _event) override;
     void mouseMoveEvent(QMouseEvent* _event) override;
     void keyPressEvent(QKeyEvent* _event) override;
-    void keyReleaseEvent(QKeyEvent* _event) override;
     void resizeEvent(QResizeEvent* _event) override;
 
     void dragEnterEvent(QDragEnterEvent*) override {}
@@ -179,12 +248,18 @@ public:
     qreal chronoTime() const;
     qreal chronoTimeAux() const;
 
-    void setScrollbar(EasyGraphicsScrollbar* _scrollbar);
+    void setScrollbar(GraphicsScrollbar* _scrollbar);
     void clear();
 
     void setTree(const ::profiler::thread_blocks_tree_t& _blocksTree);
 
     const Items& getItems() const;
+
+    bool getSelectionRegionForSaving(profiler::timestamp_t& _beginTime, profiler::timestamp_t& _endTime) const;
+
+    void inspectCurrentView(bool _strict) {
+        onInspectCurrentView(_strict);
+    }
 
 signals:
 
@@ -198,24 +273,36 @@ private:
 
     // Private non-virtual methods
 
-    void removePopup(bool _removeFromScene = false);
+    void notifySceneSizeChange();
+    void notifyVisibleRegionSizeChange();
+    void notifyVisibleRegionSizeChange(qreal _size);
+    void notifyVisibleRegionPosChange();
+    void notifyVisibleRegionPosChange(qreal _pos);
 
-    EasyChronometerItem* createChronometer(bool _main = true);
-    bool moveChrono(EasyChronometerItem* _chronometerItem, qreal _mouseX);
+    void removePopup();
+    bool needToIgnoreMouseEvent() const;
+
+    GraphicsRulerItem* createRuler(bool _main = true);
+    bool moveChrono(GraphicsRulerItem* _chronometerItem, qreal _mouseX);
     void initMode();
     int updateVisibleSceneRect();
     void updateTimelineStep(qreal _windowWidth);
     void scaleTo(qreal _scale);
-    void scrollTo(const EasyGraphicsItem* _item);
-    void onWheel(qreal _mouseX, int _wheelDelta);
-    qreal setTree(EasyGraphicsItem* _item, const ::profiler::BlocksTree::children_t& _children, qreal& _height, uint32_t& _maxDepthChild, qreal _y, short _level);
+    void scrollTo(const GraphicsBlockItem* _item);
+    qreal mapToDiagram(qreal x) const;
+    void onWheel(qreal _scenePos, int _wheelDelta);
+    qreal setTree(GraphicsBlockItem* _item, const ::profiler::BlocksTree::children_t& _children, qreal& _height, uint32_t& _maxDepthChild, qreal _y, short _level);
+
+    void revalidateOffset();
+
+    void addSelectionToHierarchy();
 
 private slots:
 
     // Private Slots
 
     void repaintScene();
-    void onGraphicsScrollbarWheel(qreal _mouseX, int _wheelDelta);
+    void onGraphicsScrollbarWheel(qreal _scenePos, int _wheelDelta);
     void onScrollbarValueChange(int);
     void onGraphicsScrollbarValueChange(qreal);
     void onFlickerTimeout();
@@ -225,68 +312,74 @@ private slots:
     void onSelectedBlockChange(unsigned int _block_index);
     void onRefreshRequired();
     void onThreadViewChanged();
+    void onZoomSelection();
+    void onInspectCurrentView(bool _strict);
 
 public:
 
     // Public inline methods
 
-    inline qreal scale() const
+    qreal scale() const
     {
         return m_scale;
     }
 
-    inline qreal offset() const
+    qreal offset() const
     {
         return m_offset;
     }
 
-    inline const QRectF& visibleSceneRect() const
+    const QRectF& visibleSceneRect() const
     {
         return m_visibleSceneRect;
     }
 
-    inline qreal timelineStep() const
+    qreal timelineStep() const
     {
         return m_timelineStep;
     }
 
-    inline qreal time2position(const profiler::timestamp_t& _time) const
+    qreal time2position(const profiler::timestamp_t& _time) const
     {
         return PROF_MICROSECONDS(qreal(_time - m_beginTime));
         //return PROF_MILLISECONDS(qreal(_time - m_beginTime));
     }
 
-    inline ::profiler::timestamp_t position2time(qreal _pos) const
+    ::profiler::timestamp_t position2time(qreal _pos) const
     {
         return PROF_FROM_MICROSECONDS(_pos);
         //return PROF_FROM_MILLISECONDS(_pos);
     }
 
-}; // END of class EasyGraphicsView.
+}; // END of class BlocksGraphicsView.
 
 //////////////////////////////////////////////////////////////////////////
 
-class EasyThreadNamesWidget : public QGraphicsView
+class ThreadNamesWidget : public QGraphicsView
 {
     Q_OBJECT
 
 private:
 
-    typedef QGraphicsView Parent;
-    typedef EasyThreadNamesWidget This;
+    using Parent = QGraphicsView;
+    using This = ThreadNamesWidget;
 
     QTimer                  m_idleTimer; ///< 
     uint64_t                 m_idleTime; ///< 
-    EasyGraphicsView*            m_view; ///< 
-    QGraphicsProxyWidget* m_popupWidget; ///< 
-    int                     m_maxLength; ///< 
-    const int        m_additionalHeight; ///< 
+    BlocksGraphicsView*          m_view; ///<
+    QWidget*              m_popupWidget; ///<
+    int                     m_maxLength; ///<
+    bool                     m_bHovered; ///<
+    char                   m_padding[3]; ///<
+    const int        m_additionalHeight; ///<
 
 public:
 
-    explicit EasyThreadNamesWidget(EasyGraphicsView* _view, int _additionalHeight, QWidget* _parent = nullptr);
-    virtual ~EasyThreadNamesWidget();
+    explicit ThreadNamesWidget(BlocksGraphicsView* _view, int _additionalHeight, QWidget* _parent = nullptr);
+    ~ThreadNamesWidget() override;
 
+    void enterEvent(QEvent* _event) override;
+    void leaveEvent(QEvent* _event) override;
     void mousePressEvent(QMouseEvent* _event) override;
     void mouseDoubleClickEvent(QMouseEvent* _event) override;
     void mouseReleaseEvent(QMouseEvent* _event) override;
@@ -299,14 +392,14 @@ public:
 
     void clear();
 
-    const EasyGraphicsView* view() const
+    const BlocksGraphicsView* view() const
     {
         return m_view;
     }
 
 private:
 
-    void removePopup(bool _removeFromScene = false);
+    void removePopup();
 
 private slots:
 
@@ -315,33 +408,37 @@ private slots:
     void onIdleTimeout();
     void repaintScene();
 
-}; // END of class EasyThreadNamesWidget.
+}; // END of class ThreadNamesWidget.
 
 //////////////////////////////////////////////////////////////////////////
 
-class EasyGraphicsViewWidget : public QWidget
+class DiagramWidget : public QWidget
 {
     Q_OBJECT
 
 private:
 
-    EasyGraphicsScrollbar*         m_scrollbar;
-    EasyGraphicsView*                   m_view;
-    EasyThreadNamesWidget* m_threadNamesWidget;
+    class QSplitter*            m_splitter;
+    GraphicsScrollbar*   m_scrollbar;
+    BlocksGraphicsView*             m_view;
+    ThreadNamesWidget* m_threadNamesWidget;
 
 public:
 
-    explicit EasyGraphicsViewWidget(QWidget* _parent = nullptr);
-    virtual ~EasyGraphicsViewWidget();
+    explicit DiagramWidget(QWidget* _parent = nullptr);
+    ~DiagramWidget() override;
 
-    EasyGraphicsView* view();
+    BlocksGraphicsView* view();
     void clear();
+
+    void save(class QSettings& settings);
+    void restore(class QSettings& settings);
 
 private:
 
     void initWidget();
 
-}; // END of class EasyGraphicsViewWidget.
+}; // END of class DiagramWidget.
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
